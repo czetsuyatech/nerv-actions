@@ -1,0 +1,208 @@
+name: Continuous Delivery
+
+on:
+  workflow_call:
+    inputs:
+      versionPrefix:
+        type: string
+        description: What version prefix should be used for the version
+        required: false
+
+      buildParams:
+        type: string
+        description: Additional parameters for the maven build command
+        required: false
+
+      javaVersion:
+        description: Java version
+        type: string
+        default: '21'
+        required: false
+
+      nodeVersion:
+        description: The Node.js version to use
+        type: string
+        default: 18
+        required: false
+
+      mavenProfile:
+        description: Maven profile
+        type: string
+        default: 'default'
+        required: false
+
+      deployStrategy:
+        description: Deploy Strategy [awsLambda, awsEcs]
+        type: string
+        required: false
+
+      environment:
+        description: Environment to deploy (dev, tst, stg, prod)
+        type: string
+        required: false
+
+      functionName:
+        description: AWS Lambda function name
+        type: string
+        required: false
+
+      awsService:
+        description: AWS ECS Service name
+        type: string
+        required: false
+
+      imageRepository:
+        description: Custom repository for the image. Defaults to the repository's name
+        type: string
+        required: false
+
+      hasImage:
+        description: Has docker image
+        type: boolean
+        default: false
+        required: false
+
+      imageContainerfile:
+        description: Path to a Container file
+        type: string
+        required: false
+
+      imageBuildContext:
+        description: Context to build the image
+        type: string
+        required: false
+
+    secrets:
+      githubToken:
+        description: Authorized GitHub token
+        required: false
+
+      githubAppId:
+        description: GitHub application ID
+        required: true
+
+      githubAppPrivateKey:
+        description: GitHub application's private key (not the client secret)
+        required: true
+
+      awsAccessKeyIdDev:
+        description: AWS access key id for dev account
+        required: false
+
+      awsSecretAccessKeyDev:
+        description: AWS secret access key for dev account
+        required: false
+
+      awsRegion:
+        description: AWS Region
+        required: false
+
+      awsCluster:
+        description: AWS Cluster
+        required: false
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      envMatrix: ${{ steps.env.outputs.matrix }}
+      packageManager: ${{ steps.pm.outputs.packageManager }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
+        with:
+          ref: ${{ github.ref }}
+
+      - run: |
+          if [[ "${{ inputs.working-directory }}" != "" ]]; then
+            cd "${{ inputs.working-directory }}"
+          fi
+
+      - id: env
+        name: Environment
+        uses: czetsuyatech/nerv-actions/utils/env@main
+        with:
+          environment: ${{ github.event.inputs.environment }}
+          githubToken: ${{ secrets.githubToken }}
+
+      - id: pm
+        name: Package Manager
+        uses: czetsuyatech/nerv-actions/utils/package-manager@main
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.commits.*.message, 'bump:') == false
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.env }}-${{ inputs.awsService }}
+      cancel-in-progress: true
+    steps:
+      - id: token
+        name: Token
+        uses: getsentry/action-github-app-token@v3.0.0
+        with:
+          app_id: ${{ secrets.githubAppId }}
+          private_key: ${{ secrets.githubAppPrivateKey }}
+
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          token: ${{ steps.token.outputs.token }}
+
+      - run: |
+          if [[ "${{ inputs.working-directory }}" != "" ]]; then
+            cd "${{ inputs.working-directory }}"
+          fi
+
+      - id: version
+        name: Version
+        uses: czetsuyatech/nerv-actions/utils/version@main
+        with:
+          versionPrefix: ${{ inputs.versionPrefix }}
+
+      - id: bump
+        name: Bump Version
+        uses: czetsuyatech/nerv-actions/utils/version-updater@main
+        if: steps.version.outputs.incremental == 'true'
+        with:
+          version: ${{ steps.version.outputs.next }}
+          packageManager: ${{ needs.setup.outputs.packageManager }}
+
+      - id: buildMaven
+        name: Build (Maven)
+        uses: czetsuyatech/nerv-actions/build/maven@main
+        if: needs.setup.outputs.packageManager == 'maven' && steps.version.outputs.incremental == 'true'
+        with:
+          buildParams: ${{ inputs.buildParams }}
+          javaVersion: ${{ inputs.javaVersion }}
+          mavenProfile: ${{ inputs.mavenProfile }}
+          githubToken: ${{ secrets.githubToken }}maven
+
+      - id: publishMaven
+        name: Publish Maven
+        uses: czetsuyatech/nerv-actions/publish/maven@main
+        if: steps.buildMaven.outcome == 'success' || steps.buildMavenQuarkus.outcome == 'success'
+        with:
+          javaVersion: ${{ inputs.javaVersion }}
+          githubToken: ${{ secrets.githubToken }}
+
+      - id: release
+        name: Create Release
+        uses: czetsuyatech/nerv-actions/release/create@main
+        if: steps.version.outputs.incremental == 'true'
+        with:
+          artifacts: ${{ steps.buildMaven.outputs.artifacts || steps.buildMavenQuarkus.outputs.artifacts || steps.build-npm.outputs.artifacts || steps.build-yarn.outputs.artifacts || steps.build-go.outputs.artifacts}}
+          version: ${{ steps.version.outputs.next }}
+          previousVersion: ${{ steps.version.outputs.latest }}
+          githubToken: ${{ steps.token.outputs.token }}
+          packageManager: ${{ needs.setup.outputs.packageManager }}
+
+      - id: cleanupOnFailure
+        name: Cleanup (on failure)
+        if: failure()
+        run: |
+          git push -d ${{ steps.version.outputs.next }} || true

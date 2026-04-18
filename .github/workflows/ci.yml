@@ -1,0 +1,104 @@
+name: Continuous Integration
+
+on:
+  workflow_call:
+    inputs:
+      buildParams:
+        type: string
+        description: Additional parameters for the maven build command
+        required: false
+
+      javaVersion:
+        description: The Java version to use
+        type: string
+        default: '21'
+        required: false
+
+      mavenProfile:
+        description: Maven profile
+        type: string
+        default: 'default'
+        required: false
+
+      nodeVersion:
+        description: The Node.js version to use
+        type: string
+        default: 18
+        required: false
+
+      hasImage:
+        description: Has docker image
+        type: boolean
+        default: false
+        required: false
+
+      imageContainerfile:
+        description: Path to a Container file
+        type: string
+        required: false
+
+      imageBuildContext:
+        description: Context to build the image
+        type: string
+        required: false
+
+    secrets:
+      githubToken:
+        description: Authorized GitHub token
+        required: false
+
+      githubAppId:
+        description: GitHub application ID
+        required: true
+
+      githubAppPrivateKey:
+        description: GitHub application's private key (not the client secret)
+        required: true
+
+jobs:
+  unitTests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    if: startsWith(github.event.commits.*.message, 'bump:') == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
+        with:
+          ref: ${{ github.ref }}
+
+      - id: pm
+        name: Package Manager
+        uses: czetsuyatech/nerv-actions/utils/package-manager@main
+
+      - name: Test (Maven)
+        uses: czetsuyatech/nerv-actions/tests/maven@main
+        if: steps.pm.outputs.packageManager == 'maven'
+        with:
+          javaVersion: ${{ inputs.javaVersion }}
+          githubToken: ${{ secrets.githubToken }}
+
+  imageBuilder:
+    name: Image Builder
+    runs-on: ubuntu-latest
+
+    if: inputs.hasImage && startsWith(github.event.commits.*.message, 'bump:') == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
+        with:
+          ref: ${{ github.ref }}
+
+      - id: pm
+        name: Package Manager
+        uses: czetsuyatech/nerv-actions/utils/package-manager@main
+
+      - id: buildMaven
+        name: Maven Builder
+        uses: czetsuyatech/nerv-actions/build/maven@main
+        if: steps.pm.outputs.packageManager == 'maven'
+        with:
+          buildParams: ${{ inputs.buildParams }}
+          javaVersion: ${{ inputs.javaVersion }}
+          mavenProfile: ${{ inputs.mavenProfile }}
+          githubToken: ${{ secrets.githubToken }}

@@ -1,0 +1,62 @@
+name: Version
+description: Computes the project's version information. This action uses the script from svu_1.
+
+inputs:
+  versionPrefix:
+    description: Prefix used for the version, defaults to ''
+    required: false
+
+  versionIncrement:
+    description: Update (current, major, minor, patch) version
+    required: false
+    default: 'current'
+
+outputs:
+  latest:
+    description: The latest released version
+    value: ${{ steps.version.outputs.latest }}
+
+  next:
+    description: The next releasable version. Equal to `latest` if `incremental == false`
+    value: ${{ steps.version.outputs.next }}
+
+  incremental:
+    description: A flag indicating if the project's version is incremental or not (0/1)
+    value: ${{ steps.version.outputs.incremental }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      name: Install SVU
+      run: |
+        mkdir -p $HOME/.local/bin
+        curl -sL https://github.com/caarlos0/svu/releases/download/v3.4.0/svu_3.4.0_linux_amd64.tar.gz \
+          | tar zx -C $HOME/.local/bin
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+      shell: bash
+
+    - id: version
+      name: Version
+      run: |
+        incremental=true
+
+        latest=$(svu current)
+        next=$(svu next ${{ inputs.versionIncrement }})
+
+        # Normalize: remove leading "v" if present
+        latest_clean=$(echo "$latest" | sed 's/^v//')
+        next_clean=$(echo "$next" | sed 's/^v//')
+
+        if [[ "$latest_clean" == "$next_clean" ]]; then
+          incremental=false
+        fi
+
+        echo "::notice ::Latest version = $latest_clean"
+        echo "::notice ::Next version = $next_clean"
+        echo "::notice ::Incremental version = $incremental"
+        
+        echo "latest=$latest_clean" >> $GITHUB_OUTPUT
+        echo "next=$next_clean" >> $GITHUB_OUTPUT
+        echo "incremental=$incremental" >> $GITHUB_OUTPUT
+      shell: bash

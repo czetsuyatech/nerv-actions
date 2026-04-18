@@ -1,0 +1,28 @@
+name: Maven Tester
+description: Tests a Maven project
+
+inputs:
+  javaVersion:
+    description: Java Version
+    default: '21'
+    required: false
+
+  githubToken:
+    description: Authorized GitHub token
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      uses: actions/setup-java@v5.1.0
+      with:
+        java-version: ${{ inputs.javaVersion }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Unit Test & Integration tests
+      run: mvn -B clean verify
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.githubToken }}

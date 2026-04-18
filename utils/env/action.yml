@@ -1,0 +1,34 @@
+name: Env
+description: Retrieve and return a matrix of environments available in a repository
+
+inputs:
+  githubToken:
+    description: Authorized GitHub token
+    required: false
+
+  environment:
+    description: A single environment to be used instead of the repository's environments
+    required: false
+
+outputs:
+  matrix:
+    description: A matrix from the repository's environments
+    value: ${{ steps.matrix.outputs.matrix }}
+
+runs:
+  using: composite
+  steps:
+    - id: matrix
+      run: |
+        env="${{ inputs.environment }}"
+        matrix="[\"$env\"]"
+
+        if [[ "$env" = "" ]]; then
+          matrix=$(gh api /repos/${{ github.repository }}/environments | jq -r '.environments | .[] | .name' | jq -cnR '[inputs]')
+        fi
+
+        echo "matrix={\"env\":$matrix}" >> $GITHUB_OUTPUT
+        # echo "::set-output name=matrix::{\"env\":$matrix}"
+      env:
+        GITHUB_TOKEN: ${{ inputs.githubToken }}
+      shell: bash

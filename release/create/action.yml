@@ -1,0 +1,54 @@
+name: Release Creator
+description: Create a new tag for the project and release an artifact to GitHub.
+
+inputs:
+  artifacts:
+    description: Release Artifacts
+    required: false
+
+  version:
+    description: Version
+    required: true
+  
+  previousVersion:
+    description: Previous Version
+    required: true
+  
+  githubToken:
+    description: Authorized GitHub token
+    required: true
+  
+  packageManager:
+    description: The project's package manager (maven, mavenQuarkus, yarn, npm)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - id: git
+      name: Configure Git
+      run: |
+        git config --global user.name "czetsuyatech-release-app[bot]"
+        git config --global user.email "czetsuyatech-release-app[bot]@users.noreply.github.com"
+      shell: bash
+
+    - id: commit
+      name: Commit Updated Version
+      run: |
+        git commit -am "bump: ${{ inputs.previousVersion }} -> ${{ inputs.version }}" -m "[skip ci]"
+        git push
+      shell: bash
+
+    - id: release
+      name: Create Release
+      run: gh release create ${{ inputs.version }} --generate-notes ${{ inputs.artifacts }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.githubToken }}
+
+    - if: inputs.packageManager == 'maven' || inputs.packageManager == 'mavenQuarkus'
+      run: |
+        mvn versions:set -DnewVersion="LATEST-SNAPSHOT" -DgenerateBackupPoms=false
+        git commit -am "bump: ${{ inputs.version }} -> LATEST-SNAPSHOT" -m "[skip ci]"
+        git push
+      shell: bash

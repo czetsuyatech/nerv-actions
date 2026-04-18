@@ -1,0 +1,19 @@
+name: Version Updater
+description: Update the version of a project
+
+inputs:
+  version:
+    description: The version to update the project
+    required: true
+
+  packageManager:
+    description: The project's package manager (valid values are `maven`, `npm` or `yarn`)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.packageManager == 'maven' || inputs.packageManager == 'mavenQuarkus'
+      run: |
+        mvn versions:set -DnewVersion=${{ inputs.version }} -DgenerateBackupPoms=false
+      shell: bash

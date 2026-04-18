@@ -1,0 +1,62 @@
+name: Maven Builder
+description: Builds a Maven project
+
+inputs:
+  javaVersion:
+    description: Java Version
+    default: '11'
+    required: false
+
+  mavenProfile:
+      description: Maven profile
+      required: false
+      default: 'default'
+
+  githubToken:
+    description: Authorized GitHub token
+    required: true
+
+  buildParams:
+    description: Additional parameters for the maven build command
+    required: false
+
+outputs:
+  artifacts:
+    description: Path where built artifacts are stored
+    value: ${{ steps.artifacts.outputs.artifacts }}
+
+runs:
+  using: composite
+  steps:
+    - id: setupJava
+      name: Setup Java
+      uses: actions/setup-java@v5.1.0
+      with:
+        java-version: ${{ inputs.javaVersion }}
+        distribution: 'temurin'
+        cache: maven
+
+    - id: mavenBuild
+      name: Build
+      run: mvn -B clean install -P ${{ inputs.mavenProfile }} -DskipTests ${{ inputs.buildParams }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.githubToken }}
+
+    - id: artifacts
+      name: Set Artifacts Path
+      run: |
+        artifacts=""
+
+        if stat -t target/**/*.jar >/dev/null 2>&1
+        then
+          artifacts="$artifacts target/**/*.jar"
+        fi
+
+        if stat -t **/target/**/*.jar >/dev/null 2>&1
+        then
+          artifacts="$artifacts **/target/**/*.jar"
+        fi
+
+        echo "artifacts=$artifacts" >> $GITHUB_OUTPUT
+      shell: bash

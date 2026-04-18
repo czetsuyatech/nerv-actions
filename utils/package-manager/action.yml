@@ -1,0 +1,30 @@
+name: Package Manager
+description: This action tries to identity the package manager used by the project. For example, Maven, NPM, etc.
+
+outputs:
+  packageManager:
+    description: The identified package manager of the project ('maven', 'mavenQuarkus', 'npm', 'yarn', or 'unsupported')
+    value: ${{ steps.identifyPM.outputs.packageManager }}
+
+runs:
+  using: composite
+  steps:
+    - id: identifyPM
+      run: |
+        pm=unsupported
+
+        if test -f "pom.xml"; then
+          pm=maven
+
+          # Check if there's a quarkus text in the pom
+          if cat pom.xml | grep -q "quarkus"; then
+            pm=mavenQuarkus
+          fi
+        elif test -f "yarn.lock"; then
+          pm=yarn
+        elif test -f "package-lock.json"; then
+          pm=npm
+        fi
+        
+        echo "packageManager=$pm" >> $GITHUB_OUTPUT
+      shell: bash

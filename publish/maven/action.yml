@@ -1,0 +1,33 @@
+name: Maven Publisher
+description: Publish a Maven package to GitHub Packages
+
+inputs:
+  javaVersion:
+    description: Java Version
+    default: '11'
+    required: false
+
+  githubToken:
+    description: Authorized GitHub token
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      uses: actions/setup-java@v5.1.0
+      with:
+        java-version: ${{ inputs.javaVersion }}
+        distribution: adopt
+        cache: maven
+
+    - name: Build
+      run: mvn -B deploy -DskipTests -Pgithub-release
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.githubToken }}
+
+    - run: |
+        rm target/function.zip || true
+        cp lambda.zip target/function.zip || true
+      shell: bash
